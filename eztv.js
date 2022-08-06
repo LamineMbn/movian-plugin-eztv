@@ -16,24 +16,24 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const page = require('showtime/page');
-const service = require('showtime/service');
-const settings = require('showtime/settings');
-const http = require('showtime/http');
-const plugin = JSON.parse(Plugin.manifest);
-const logo = Plugin.path + "logo.png";
+var page = require('showtime/page');
+var service = require('showtime/service');
+var settings = require('showtime/settings');
+var http = require('showtime/http');
+var plugin = JSON.parse(Plugin.manifest);
+var logo = Plugin.path + "logo.png";
 
-const GET_TORRENTS_ENDPOINT = "api/get-torrents"
-const SEARCH_BY_NAME_ENDPOINT = "api/search"
+var GET_TORRENTS_ENDPOINT = "api/get-torrents"
+var SEARCH_BY_NAME_ENDPOINT = "api/search"
 
 RichText = function(x) {
     this.str = x.toString();
 }
 
-const blue = '6699CC', orange = 'FFA500', red = 'EE0000', green = '008B45';
+var blue = '6699CC', orange = 'FFA500', red = 'EE0000', green = '008B45';
 
 function coloredStr(str, color) {
-    return `<p style="color:${color}">${str}</p>`;
+    return '<font color="' + color + '">' + str + '</font>';
 }
 
 function setPageHeader(page, title) {
@@ -53,7 +53,7 @@ settings.createBool('enableMetadata', 'Enable metadata fetching', false, functio
     service.enableMetadata = v;
 });
 	
-settings.createString('baseURL', "Base URL without '/' at the end", 'https://eztv.ag', function(v) {
+settings.createString('baseURL', "Base URL without '/' at the end", 'https://eztv.wf', function(v) {
     service.baseUrl = v;
 });
 
@@ -75,29 +75,31 @@ new page.Route(plugin.id + ":play:(.*):(.*):(.*):(.*):(.*)", function(page, url,
 });
 
 function bytesToSize(bytes) {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     if (bytes == 0) return '0 Byte';
-    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
     return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
 }
 
 function callService(url) {
     page.loading = true;
-    let response = http.request(url).toString();
+    var response = http.request(url).toString();
     page.loading = false;
     return response
 }
 
-function retrieveAllTorrentsUrlBuilder(page, limit=10) {
-    const allTorrentsUrlWithParams = new URL(`${service.baseUrl}/${GET_TORRENTS_ENDPOINT}`);
-    allTorrentsUrlWithParams.searchParams.append("limit", limit.toString());
-    allTorrentsUrlWithParams.searchParams.append("page", page.toString());
-    return allTorrentsUrlWithParams.href
+function retrieveAllTorrentsUrlBuilder(page) {
+    var limit = 10;
+    var allTorrentsUrlWithParams = service.baseUrl + "/" + GET_TORRENTS_ENDPOINT;
+    allTorrentsUrlWithParams = allTorrentsUrlWithParams.concat("?", "limit", "=", limit.toString());
+    allTorrentsUrlWithParams = allTorrentsUrlWithParams.concat("&", "page", "=", page.toString());
+    return allTorrentsUrlWithParams
 }
 
 function retrieveSearchTorrentsUrlBuilder(query) {
-    const searchUrlWithParams = new URL(replaceSpaceByDash(query), `${service.baseUrl}/${SEARCH_BY_NAME_ENDPOINT}`);
-    return searchUrlWithParams.href
+    var searchUrlWithParams =  service.baseUrl + "/" + SEARCH_BY_NAME_ENDPOINT;
+    searchUrlWithParams = searchUrlWithParams.concat("/", replaceSpaceByDash(query));
+    return searchUrlWithParams
 }
 
 function replaceSpaceByDash(text) {
@@ -105,18 +107,18 @@ function replaceSpaceByDash(text) {
 }
 
 function browseItems(page, query) {
-    let fromPage = 1;
-    const tryToSearch = true;
+    var fromPage = 1;
+    var tryToSearch = true;
     page.entries = 0;
 
     function loader() {
         if (!tryToSearch) return false;
-        const url = retrieveAllTorrentsUrlBuilder(fromPage)
-        const response = callService(url)
-        const json = JSON.parse(response)
+        var url = retrieveAllTorrentsUrlBuilder(fromPage)
+        var response = callService(url)
+        var json = JSON.parse(response)
 
-        for (let i in json.torrents) {
-            const item = page.appendItem(plugin.id + ':play:' + escape(json.torrents[i].torrent_url) + ':' + escape(json.torrents[i].title) + ':' + json.torrents[i].imdb_id + ':' + json.torrents[i].season + ':' + json.torrents[i].episode, "video", {
+        for (var i in json.torrents) {
+            var item = page.appendItem(plugin.id + ':play:' + escape(json.torrents[i].torrent_url) + ':' + escape(json.torrents[i].title) + ':' + json.torrents[i].imdb_id + ':' + json.torrents[i].season + ':' + json.torrents[i].episode, "video", {
                 title: json.torrents[i].title,
                 icon: json.torrents[i].small_screenshot ? 'https:' + json.torrents[i].small_screenshot : 'https://ezimg.ch/s/1/9/image-unavailable.jpg',
                 vtype: 'tvseries',
@@ -154,20 +156,20 @@ function search(page, query) {
     setPageHeader(page, plugin.title);
     page.entries = 0;
     page.loading = true;
-    const url = retrieveSearchTorrentsUrlBuilder(query)
-    const response = callService(url)
+    var url = retrieveSearchTorrentsUrlBuilder(query)
+    var response = callService(url)
     // 1-link to the show, 2-show's title, 3-episode url, 4-episode's title, 5-magnet&torrent urls, 6-size, 7-released, 8-seeds
-    const re = /<tr name="hover"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?alt="Info" title="([\s\S]*?)"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?class="epinfo">([\s\S]*?)<\/a>[\s\S]*?<td align="center"([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">[\s\S]*?">([\s\S]*?)</g;
-    let match = re.exec(response);
+    var re = /<tr name="hover"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?alt="Info" title="([\s\S]*?)"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?class="epinfo">([\s\S]*?)<\/a>[\s\S]*?<td align="center"([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">[\s\S]*?">([\s\S]*?)</g;
+    var match = re.exec(response);
     while (match) {
-        const re2 = /<a href="([\s\S]*?)"/g;
-        let urls = re2.exec(match[5]);
-        let lnk = '';
+        var re2 = /<a href="([\s\S]*?)"/g;
+        var urls = re2.exec(match[5]);
+        var lnk = '';
         while (urls) { // we prefer .torrent 
             lnk = urls[1];
             urls = re2.exec(match[5])
         }
-        const item = page.appendItem('torrent:video:' + lnk, "video", {
+        var item = page.appendItem('torrent:video:' + lnk, "video", {
             title: new RichText(match[4]),
             icon: logo,
             genre: new RichText((match[8] ? coloredStr('Seeds: ', orange) + coloredStr(match[8], green) + ' ' : '') +
