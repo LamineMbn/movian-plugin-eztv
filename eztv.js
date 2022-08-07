@@ -20,14 +20,10 @@ var page = require('movian/page');
 var service = require('movian/service');
 var settings = require('movian/settings');
 var http = require('movian/http');
+var tmdbApi = require('tmdb-api');
+var eztvApi = require('eztv-api');
 var plugin = JSON.parse(Plugin.manifest);
 var logo = Plugin.path + "logo.png";
-
-var TMDB_POSTER_BASE_URL = "http://image.tmdb.org/t/p/w300"
-var TMDB_POPULAR_SHOWS_ENDPOINT = "/tv/popular"
-
-var GET_TORRENTS_ENDPOINT = "/api/get-torrents"
-var SEARCH_BY_NAME_ENDPOINT = "/search"
 
 RichText = function(x) {
     this.str = x.toString();
@@ -96,38 +92,6 @@ function bytesToSize(bytes) {
     return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
 }
 
-function callService(url) {
-    page.loading = true;
-    var response = http.request(url).toString();
-    page.loading = false;
-    return response
-}
-
-function retrieveAllTorrentsUrlBuilder(page) {
-    var limit = 10;
-    var allTorrentsUrlWithParams = service.eztBaseUrl + GET_TORRENTS_ENDPOINT;
-    allTorrentsUrlWithParams = allTorrentsUrlWithParams.concat("?", "limit", "=", limit.toString());
-    allTorrentsUrlWithParams = allTorrentsUrlWithParams.concat("&", "page", "=", page.toString());
-    return allTorrentsUrlWithParams
-}
-
-function retrievePopularShowsUrlBuilder(page) {
-    var popularShowsUrlWithParams = service.tmdbBaseUrl + TMDB_POPULAR_SHOWS_ENDPOINT;
-    popularShowsUrlWithParams = popularShowsUrlWithParams.concat("?", "page", "=", page.toString());
-    popularShowsUrlWithParams = popularShowsUrlWithParams.concat("&", "api_key", "=", service.tmdbApiKey);
-    return popularShowsUrlWithParams
-}
-
-function retrieveSearchTorrentsUrlBuilder(query) {
-    var searchUrlWithParams =  service.eztBaseUrl + SEARCH_BY_NAME_ENDPOINT;
-    searchUrlWithParams = searchUrlWithParams.concat("/", replaceSpaceByDash(query));
-    return searchUrlWithParams
-}
-
-function replaceSpaceByDash(text) {
-    return escape(text).replace(/%20/g, '-')
-}
-
 function tvShowList(page) {
     var fromPage = 1;
     var tryToSearch = true;
@@ -135,14 +99,14 @@ function tvShowList(page) {
 
     function loader() {
         if (!tryToSearch) return false;
-        var url = retrievePopularShowsUrlBuilder(fromPage)
-        var response = callService(url)
-        var json = JSON.parse(response)
+        // var url = retrievePopularShowsUrlBuilder(fromPage)
+        // var response = callService(url)
+        var json = tmdbApi.retrievePopularShows(fromPage)
         page.loading = false;
         for (var i in json.results) {
             var item = page.appendItem(plugin.id + ':play:', "directory", {
                 title: json.results[i].name,
-                icon: json.results[i].backdrop_path ? TMDB_POSTER_BASE_URL + json.results[i].backdrop_path : 'https://ezimg.ch/s/1/9/image-unavailable.jpg',
+                icon: tmdbApi.retrievePoster(json.results[i]),
                 vtype: 'tvseries',
                 tagline: new RichText(json.results[i].overview)
             });
@@ -168,9 +132,7 @@ function browseItems(page, query) {
 
     function loader() {
         if (!tryToSearch) return false;
-        var url = retrieveAllTorrentsUrlBuilder(fromPage)
-        var response = callService(url)
-        var json = JSON.parse(response)
+        var json = eztvApi.retrieveAllTorrents(fromPage)
         page.loading = false;
         for (var i in json.torrents) {
             var item = page.appendItem(plugin.id + ':play:' + escape(json.torrents[i].torrent_url) + ':' + escape(json.torrents[i].title) + ':' + json.torrents[i].imdb_id + ':' + json.torrents[i].season + ':' + json.torrents[i].episode, "video", {
@@ -212,14 +174,10 @@ new page.Route(plugin.id + ":start", function(page) {
 function search(page, query) {
     setPageHeader(page, plugin.title);
     page.entries = 0;
-    var url = retrieveSearchTorrentsUrlBuilder(query)
-    var response = callService(url).toString()
+    var response = eztvApi.searchTorrentByQuery(query)
     // 1-link to the show, 2-show's title, 3-episode url, 4-episode's title, 5-magnet&torrent urls, 6-size, 7-released, 8-seeds
     var re = /<tr name="hover"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?alt="Info" title="([\s\S]*?)"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?class="epinfo">([\s\S]*?)<\/a>[\s\S]*?<td align="center"([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">[\s\S]*?">([\s\S]*?)</g;
     var match = re.exec(response);
-    // var imageUrl = service.baseUrl + match[1]
-    // var imagePage = callService(imageUrl).toString()
-    
     
     while (match) {
         // 0 1    2   3
