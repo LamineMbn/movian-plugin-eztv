@@ -16,15 +16,18 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-var page = require('showtime/page');
-var service = require('showtime/service');
-var settings = require('showtime/settings');
-var http = require('showtime/http');
+var page = require('movian/page');
+var service = require('movian/service');
+var settings = require('movian/settings');
+var http = require('movian/http');
 var plugin = JSON.parse(Plugin.manifest);
 var logo = Plugin.path + "logo.png";
 
-var GET_TORRENTS_ENDPOINT = "api/get-torrents"
-var SEARCH_BY_NAME_ENDPOINT = "search"
+var TMDB_POSTER_BASE_URL = "http://image.tmdb.org/t/p/w300"
+var TMDB_POPULAR_SHOWS_ENDPOINT = "/tv/popular"
+
+var GET_TORRENTS_ENDPOINT = "/api/get-torrents"
+var SEARCH_BY_NAME_ENDPOINT = "/search"
 
 RichText = function(x) {
     this.str = x.toString();
@@ -57,8 +60,16 @@ settings.createBool('enableMetadata', 'Enable metadata fetching', false, functio
     service.enableMetadata = v;
 });
 	
-settings.createString('baseURL', "Base URL without '/' at the end", 'https://eztv.wf', function(v) {
-    service.baseUrl = v;
+settings.createString('eztBaseURL', "EZTV base URL without '/' at the end", 'https://eztv.wf', function(v) {
+    service.eztBaseUrl = v;
+});
+
+settings.createString('tmdbBaseURL', "TMDB base URL without '/' at the end", 'https://api.themoviedb.org/3', function(v) {
+    service.tmdbBaseUrl = v;
+});
+
+settings.createString('tmdbApiKey', "TMDB api key to display popular tv shows", 'a2f1432730cf9fc81a38df98e59a15ff', function(v) {
+    service.tmdbApiKey = v;
 });
 
 new page.Route(plugin.id + ":play:(.*):(.*):(.*):(.*):(.*)", function(page, url, title, imdb_id, season, episode) {
@@ -94,20 +105,60 @@ function callService(url) {
 
 function retrieveAllTorrentsUrlBuilder(page) {
     var limit = 10;
-    var allTorrentsUrlWithParams = service.baseUrl + "/" + GET_TORRENTS_ENDPOINT;
+    var allTorrentsUrlWithParams = service.eztBaseUrl + GET_TORRENTS_ENDPOINT;
     allTorrentsUrlWithParams = allTorrentsUrlWithParams.concat("?", "limit", "=", limit.toString());
     allTorrentsUrlWithParams = allTorrentsUrlWithParams.concat("&", "page", "=", page.toString());
     return allTorrentsUrlWithParams
 }
 
+function retrievePopularShowsUrlBuilder(page) {
+    var popularShowsUrlWithParams = service.tmdbBaseUrl + TMDB_POPULAR_SHOWS_ENDPOINT;
+    popularShowsUrlWithParams = popularShowsUrlWithParams.concat("?", "page", "=", page.toString());
+    popularShowsUrlWithParams = popularShowsUrlWithParams.concat("&", "api_key", "=", service.tmdbApiKey);
+    return popularShowsUrlWithParams
+}
+
 function retrieveSearchTorrentsUrlBuilder(query) {
-    var searchUrlWithParams =  service.baseUrl + "/" + SEARCH_BY_NAME_ENDPOINT;
+    var searchUrlWithParams =  service.eztBaseUrl + SEARCH_BY_NAME_ENDPOINT;
     searchUrlWithParams = searchUrlWithParams.concat("/", replaceSpaceByDash(query));
     return searchUrlWithParams
 }
 
 function replaceSpaceByDash(text) {
     return escape(text).replace(/%20/g, '-')
+}
+
+function tvShowList(page) {
+    var fromPage = 1;
+    var tryToSearch = true;
+    page.entries = 0;
+
+    function loader() {
+        if (!tryToSearch) return false;
+        var url = retrievePopularShowsUrlBuilder(fromPage)
+        var response = callService(url)
+        var json = JSON.parse(response)
+        page.loading = false;
+        for (var i in json.results) {
+            var item = page.appendItem(plugin.id + ':play:', "directory", {
+                title: json.results[i].name,
+                icon: json.results[i].backdrop_path ? TMDB_POSTER_BASE_URL + json.results[i].backdrop_path : 'https://ezimg.ch/s/1/9/image-unavailable.jpg',
+                vtype: 'tvseries',
+                tagline: new RichText(json.results[i].overview)
+            });
+            page.entries++;
+            // if (service.enableMetadata) {
+            //     item.bindVideoMetadata({
+            //         imdb: 'tt' + json.torrents[i].imdb_id
+            //     });
+            // }
+        }
+        fromPage++;
+        return true;
+    }
+    loader();
+    page.paginator = loader;
+    page.loading = false;
 }
 
 function browseItems(page, query) {
@@ -152,9 +203,9 @@ function browseItems(page, query) {
 new page.Route(plugin.id + ":start", function(page) {
     setPageHeader(page, plugin.synopsis);
     page.appendItem(plugin.id + ":search:", 'search', {
-        title: 'Search at ' + service.baseUrl
+        title: 'Search at ' + service.eztBaseUrl
     });
-    browseItems(page);
+    tvShowList(page);
     page.loading = false;
 });
 
@@ -171,8 +222,10 @@ function search(page, query) {
     
     
     while (match) {
-        var imageUrlSplitted = match[1].split("/")
-        var imageUrl = service.baseUrl + "/ezimg/thumbs/" + imageUrlSplitted[3] + "-" + imageUrlSplitted[2] + ".jpg"
+        // 0 1    2   3
+        // /shows/id/name-of-the-show
+        var showInfo = match[1].split("/")
+        var imageUrl = service.eztBaseUrl + "/ezimg/thumbs/" + showInfo[3] + "-" + showInfo[2] + ".jpg"
         var re2 = /<a href="([\s\S]*?)"/g;
         var urls = re2.exec(match[5]);
         var lnk = '';
