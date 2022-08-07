@@ -24,10 +24,14 @@ var plugin = JSON.parse(Plugin.manifest);
 var logo = Plugin.path + "logo.png";
 
 var GET_TORRENTS_ENDPOINT = "api/get-torrents"
-var SEARCH_BY_NAME_ENDPOINT = "api/search"
+var SEARCH_BY_NAME_ENDPOINT = "search"
 
 RichText = function(x) {
     this.str = x.toString();
+}
+
+RichText.prototype.toRichString = function(x) {
+    return this.str;
 }
 
 var blue = '6699CC', orange = 'FFA500', red = 'EE0000', green = '008B45';
@@ -103,7 +107,7 @@ function retrieveSearchTorrentsUrlBuilder(query) {
 }
 
 function replaceSpaceByDash(text) {
-    return text.replace(/%20/g, '-')
+    return escape(text).replace(/%20/g, '-')
 }
 
 function browseItems(page, query) {
@@ -116,7 +120,7 @@ function browseItems(page, query) {
         var url = retrieveAllTorrentsUrlBuilder(fromPage)
         var response = callService(url)
         var json = JSON.parse(response)
-
+        page.loading = false;
         for (var i in json.torrents) {
             var item = page.appendItem(plugin.id + ':play:' + escape(json.torrents[i].torrent_url) + ':' + escape(json.torrents[i].title) + ':' + json.torrents[i].imdb_id + ':' + json.torrents[i].season + ':' + json.torrents[i].episode, "video", {
                 title: json.torrents[i].title,
@@ -142,6 +146,7 @@ function browseItems(page, query) {
     }
     loader();
     page.paginator = loader;
+    page.loading = false;
 }
 	
 new page.Route(plugin.id + ":start", function(page) {
@@ -150,18 +155,24 @@ new page.Route(plugin.id + ":start", function(page) {
         title: 'Search at ' + service.baseUrl
     });
     browseItems(page);
+    page.loading = false;
 });
 
 function search(page, query) {
     setPageHeader(page, plugin.title);
     page.entries = 0;
-    page.loading = true;
     var url = retrieveSearchTorrentsUrlBuilder(query)
-    var response = callService(url)
+    var response = callService(url).toString()
     // 1-link to the show, 2-show's title, 3-episode url, 4-episode's title, 5-magnet&torrent urls, 6-size, 7-released, 8-seeds
     var re = /<tr name="hover"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?alt="Info" title="([\s\S]*?)"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?class="epinfo">([\s\S]*?)<\/a>[\s\S]*?<td align="center"([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">[\s\S]*?">([\s\S]*?)</g;
     var match = re.exec(response);
+    // var imageUrl = service.baseUrl + match[1]
+    // var imagePage = callService(imageUrl).toString()
+    
+    
     while (match) {
+        var imageUrlSplitted = match[1].split("/")
+        var imageUrl = service.baseUrl + "/ezimg/thumbs/" + imageUrlSplitted[3] + "-" + imageUrlSplitted[2] + ".jpg"
         var re2 = /<a href="([\s\S]*?)"/g;
         var urls = re2.exec(match[5]);
         var lnk = '';
@@ -171,7 +182,7 @@ function search(page, query) {
         }
         var item = page.appendItem('torrent:video:' + lnk, "video", {
             title: new RichText(match[4]),
-            icon: logo,
+            icon: imageUrl,
             genre: new RichText((match[8] ? coloredStr('Seeds: ', orange) + coloredStr(match[8], green) + ' ' : '') +
                 coloredStr('Size: ', orange) + match[6]),
             tagline: new RichText(coloredStr('<br>Released: ', orange) + match[7])
