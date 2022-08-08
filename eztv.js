@@ -19,17 +19,16 @@
 var page = require('movian/page');
 var service = require('movian/service');
 var settings = require('movian/settings');
-var http = require('movian/http');
 var tmdbApi = require('tmdb-api');
 var eztvApi = require('eztv-api');
 var plugin = JSON.parse(Plugin.manifest);
 var logo = Plugin.path + "logo.png";
 
-RichText = function(x) {
+RichText = function (x) {
     this.str = x.toString();
 }
 
-RichText.prototype.toRichString = function(x) {
+RichText.prototype.toRichString = function (x) {
     return this.str;
 }
 
@@ -52,37 +51,20 @@ function setPageHeader(page, title) {
 service.create(plugin.title, plugin.id + ":start", "video", true, logo);
 
 settings.globalSettings(plugin.id, plugin.title, logo, plugin.synopsis);
-settings.createBool('enableMetadata', 'Enable metadata fetching', false, function(v) {
+settings.createBool('enableMetadata', 'Enable metadata fetching', false, function (v) {
     service.enableMetadata = v;
 });
-	
-settings.createString('eztBaseURL', "EZTV base URL without '/' at the end", 'https://eztv.wf', function(v) {
-    service.eztBaseUrl = v;
+
+settings.createString('eztvBaseURL', "EZTV base URL without '/' at the end", 'https://eztv.wf', function (v) {
+    service.eztvBaseUrl = v;
 });
 
-settings.createString('tmdbBaseURL', "TMDB base URL without '/' at the end", 'https://api.themoviedb.org/3', function(v) {
+settings.createString('tmdbBaseURL', "TMDB base URL without '/' at the end", 'https://api.themoviedb.org/3', function (v) {
     service.tmdbBaseUrl = v;
 });
 
-settings.createString('tmdbApiKey', "TMDB api key to display popular tv shows", 'a2f1432730cf9fc81a38df98e59a15ff', function(v) {
+settings.createString('tmdbApiKey', "TMDB api key to display popular tv shows", 'a2f1432730cf9fc81a38df98e59a15ff', function (v) {
     service.tmdbApiKey = v;
-});
-
-new page.Route(plugin.id + ":play:(.*):(.*):(.*):(.*):(.*)", function(page, url, title, imdb_id, season, episode) {
-    page.loading = true;
-    page.type = 'video';
-    page.source = "videoparams:" + JSON.stringify({
-        title: unescape(title),
-        canonicalUrl: plugin.id + ':play:' + url + ':' + title + ':' + imdb_id + ':' + season + ':' + episode,
-        sources: [{
-            url: 'torrent:video:' + unescape(url)
-        }],
-        imdbid: imdb_id ? 'tt' + imdb_id : 0,
-        season: season,
-        episode: episode,
-        no_fs_scan: true
-    });
-    page.loading = false;
 });
 
 function bytesToSize(bytes) {
@@ -99,27 +81,21 @@ function tvShowList(page) {
 
     function loader() {
         if (!tryToSearch) return false;
-        // var url = retrievePopularShowsUrlBuilder(fromPage)
-        // var response = callService(url)
         var json = tmdbApi.retrievePopularShows(fromPage)
         page.loading = false;
         for (var i in json.results) {
-            var item = page.appendItem(plugin.id + ':play:', "directory", {
+            var item = page.appendItem(plugin.id + ':detail:' + json.results[i].id, "directory", {
                 title: json.results[i].name,
                 icon: tmdbApi.retrievePoster(json.results[i]),
                 vtype: 'tvseries',
                 tagline: new RichText(json.results[i].overview)
             });
             page.entries++;
-            // if (service.enableMetadata) {
-            //     item.bindVideoMetadata({
-            //         imdb: 'tt' + json.torrents[i].imdb_id
-            //     });
-            // }
         }
         fromPage++;
         return true;
     }
+
     loader();
     page.paginator = loader;
     page.loading = false;
@@ -134,42 +110,83 @@ function browseItems(page, query) {
         if (!tryToSearch) return false;
         var json = eztvApi.retrieveAllTorrents(fromPage)
         page.loading = false;
+
         for (var i in json.torrents) {
-            var item = page.appendItem(plugin.id + ':play:' + escape(json.torrents[i].torrent_url) + ':' + escape(json.torrents[i].title) + ':' + json.torrents[i].imdb_id + ':' + json.torrents[i].season + ':' + json.torrents[i].episode, "video", {
-                title: json.torrents[i].title,
-                icon: json.torrents[i].small_screenshot ? 'https:' + json.torrents[i].small_screenshot : 'https://ezimg.ch/s/1/9/image-unavailable.jpg',
+            var torrent = json.torrents[i]
+            var torrenUrlDecoded = escape(torrent.torrent_url)
+            var itemUrl = plugin.id + ':play:' + torrenUrlDecoded + ':' + escape(torrent.title) + ':' + torrent.imdb_id + ':' + torrent.season + ':' + torrent.episode
+            console.log("Item Url " + itemUrl)
+            var item = page.appendItem(itemUrl, "video", {
+                title: torrent.title,
+                icon: torrent.small_screenshot ? 'https:' + torrent.small_screenshot : 'https://ezimg.ch/s/1/9/image-unavailable.jpg',
                 vtype: 'tvseries',
-                season: {number: +json.torrents[i].season},
-                episode: {title: json.torrents[i].title, number: +json.torrents[i].episode},
-                genre: new RichText(coloredStr('S: ', orange) + coloredStr(json.torrents[i].seeds, green) +
-                    coloredStr(' P: ', orange) + coloredStr(json.torrents[i].peers, red) +
-                    coloredStr(' Size: ', orange) + bytesToSize(json.torrents[i].size_bytes) +
-                    (json.torrents[i].imdb_id ? coloredStr('<br>IMDb ID: ', orange) + 'tt' + json.torrents[i].imdb_id : '')),
-                tagline: new RichText(coloredStr('Released: ', orange) + new Date(json.torrents[i].date_released_unix * 1000))
+                season: {number: +torrent.season},
+                episode: {title: torrent.title, number: +torrent.episode},
+                genre: new RichText(coloredStr('S: ', orange) + coloredStr(torrent.seeds, green) +
+                    coloredStr(' P: ', orange) + coloredStr(torrent.peers, red) +
+                    coloredStr(' Size: ', orange) + bytesToSize(torrent.size_bytes) +
+                    (torrent.imdb_id ? coloredStr('<br>IMDb ID: ', orange) + 'tt' + torrent.imdb_id : '')),
+                tagline: new RichText(coloredStr('Released: ', orange) + new Date(torrent.date_released_unix * 1000))
             });
             page.entries++;
-             if (service.enableMetadata) {
-                 item.bindVideoMetadata({
-                     imdb: 'tt' + json.torrents[i].imdb_id
-                 });
-             }
+            if (service.enableMetadata) {
+                item.bindVideoMetadata({
+                    imdb: 'tt' + torrent.imdb_id
+                });
+            }
         }
         fromPage++;
         return true;
     }
+
     loader();
     page.paginator = loader;
     page.loading = false;
 }
-	
-new page.Route(plugin.id + ":start", function(page) {
-    setPageHeader(page, plugin.synopsis);
-    page.appendItem(plugin.id + ":search:", 'search', {
-        title: 'Search at ' + service.eztBaseUrl
-    });
-    tvShowList(page);
+
+function browseShowEpisodes(page, tmdbShow) {
+    // We remove the 'tt' at the beginning 
+    var imdbId = tmdbShow.external_ids.imdb_id.slice(2)
+    var showName = tmdbShow.name
+    setPageHeader(page, showName);
+    var fromPage = 1;
+    var tryToSearch = true;
+    page.entries = 0;
+
+    function loader() {
+        if (!tryToSearch) return false;
+        var torrents = eztvApi.searchTorrentByImdbId(imdbId, fromPage, {resolutions: ["720","1080"], minSeeds: 5})
+        page.loading = false;
+        for (var i in torrents) {
+
+            var torrent = torrents[i]
+            var torrenUrlDecoded = decodeURI(torrent.torrent_url)
+            var itemUrl = plugin.id + ':play:' + torrenUrlDecoded + ':' + decodeURI(torrent.title) + ':' + torrent.imdb_id + ':' + torrent.season + ':' + torrent.episode
+
+            var item = page.appendItem(itemUrl, "video", {
+                title: torrent.title,
+                icon: torrent.small_screenshot ? 'https:' + torrent.small_screenshot : tmdbApi.retrievePoster(tmdbShow),
+                vtype: 'tvseries',
+                season: {number: +torrent.season},
+                episode: {title: torrent.title, number: +torrent.episode},
+                genre: new RichText(coloredStr('S: ', orange) + coloredStr(torrent.seeds, green) +
+                    coloredStr(' P: ', orange) + coloredStr(torrent.peers, red) +
+                    coloredStr(' Size: ', orange) + bytesToSize(torrent.size_bytes) +
+                    (torrent.imdb_id ? coloredStr('<br>IMDb ID: ', orange) + 'tt' + torrent.imdb_id : '')),
+                tagline: new RichText(coloredStr('Released: ', orange) + new Date(torrent.date_released_unix * 1000))
+            });
+            page.entries++;
+
+
+        }
+        fromPage++;
+        return true;
+    }
+
+    loader();
+    page.paginator = loader;
     page.loading = false;
-});
+}
 
 function search(page, query) {
     setPageHeader(page, plugin.title);
@@ -178,12 +195,12 @@ function search(page, query) {
     // 1-link to the show, 2-show's title, 3-episode url, 4-episode's title, 5-magnet&torrent urls, 6-size, 7-released, 8-seeds
     var re = /<tr name="hover"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?alt="Info" title="([\s\S]*?)"[\s\S]*?<a href="([\s\S]*?)"[\s\S]*?class="epinfo">([\s\S]*?)<\/a>[\s\S]*?<td align="center"([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">([\s\S]*?)<\/td>[\s\S]*?class="forum_thread_post">[\s\S]*?">([\s\S]*?)</g;
     var match = re.exec(response);
-    
+
     while (match) {
         // 0 1    2   3
         // /shows/id/name-of-the-show
-        var showInfo = match[1].split("/")
-        var imageUrl = service.eztBaseUrl + "/ezimg/thumbs/" + showInfo[3] + "-" + showInfo[2] + ".jpg"
+        var poster = match[1].split("/")
+        var imageUrl = service.eztvBaseUrl + "/ezimg/thumbs/" + poster[3] + "-" + poster[2] + ".jpg"
         var re2 = /<a href="([\s\S]*?)"/g;
         var urls = re2.exec(match[5]);
         var lnk = '';
@@ -199,15 +216,47 @@ function search(page, query) {
             tagline: new RichText(coloredStr('<br>Released: ', orange) + match[7])
         });
         page.entries++;
-      match = re.exec(response);
+        match = re.exec(response);
     }
     page.loading = false;
 }
 
-new page.Route(plugin.id + ":search:(.*)", function(page, query) {
+new page.Route(plugin.id + ":start", function (page) {
+    setPageHeader(page, plugin.synopsis);
+    page.appendItem(plugin.id + ":search:", 'search', {
+        title: 'Search at ' + service.eztvBaseUrl
+    });
+    tvShowList(page);
+    page.loading = false;
+});
+
+new page.Route(plugin.id + ":play:(.*):(.*):(.*):(.*):(.*)", function (page, url, title, imdb_id, season, episode) {
+    page.loading = true;
+    page.type = 'video';
+    page.source = "videoparams:" + JSON.stringify({
+        title: unescape(title),
+        canonicalUrl: plugin.id + ':play:' + url + ':' + title + ':' + imdb_id + ':' + season + ':' + episode,
+        sources: [{
+            url: 'torrent:video:' + unescape(url)
+        }],
+        imdbid: imdb_id ? 'tt' + imdb_id : 0,
+        season: season,
+        episode: episode,
+        no_fs_scan: true
+    });
+    page.loading = false;
+});
+
+new page.Route(plugin.id + ":detail:(.*)", function (page, id) {
+    var tmdbShow = tmdbApi.retrieveShowById(id);
+
+    browseShowEpisodes(page, tmdbShow)
+});
+
+new page.Route(plugin.id + ":search:(.*)", function (page, query) {
     search(page, query);
 });
 
-page.Searcher(plugin.id, logo, function(page, query) {
+page.Searcher(plugin.id, logo, function (page, query) {
     search(page, query);
 });
